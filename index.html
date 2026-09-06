@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="apple-touch-icon" href="./icon.png">
- 　 <link rel="icon" type="image/png" href="./icon.png">
+    <link rel="icon" type="image/png" href="./icon.png">
     <title>ファイル転送ツール</title>
     <!-- 安定動作が確認されているPeerJS v1.4.7を使用 -->
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
@@ -40,7 +40,7 @@
 
         .container {
             width: 100%;
-            max-width: 600px; /* PCなど大きすぎる画面では広がりすぎないように制限しつつ、スマホでは画面いっぱいに */
+            max-width: 600px;
             display: flex;
             flex-direction: column;
             gap: 15px;
@@ -68,10 +68,10 @@
             max-width: 320px;
             text-align: center; 
             margin: 6px 0; 
-            font-size: 16px; /* スマホでフォームタップ時にズームしないよう16px以上を確保 */
+            font-size: 16px; 
         }
         
-        /* ぷっくり立体的なボタンの共通スタイル（タッチ操作しやすいよう大きめ） */
+        /* ぷっくり立体的なボタンの共通スタイル */
         .puku-btn {
             padding: 12px 20px;
             font-size: clamp(0.9rem, 3vw, 1.1rem);
@@ -135,7 +135,7 @@
         #qrcode-img { background: #fff; padding: 8px; border-radius: 6px; margin-top: 8px; max-width: 150px; height: auto; display: inline-block; }
         
         #connection-status { font-weight: bold; font-size: clamp(0.9rem, 2.5vw, 1.1rem); color: #00ffcc; margin-bottom: 8px; }
-        p { font-size: clamp(0.9rem, 2.5vw, 1rem); word-break: break-all; }
+        p { font-size: clamp(0.9rem, 2.5vw, 1rem); word-break: break-all; white-space: pre-line; }
         a { color: #00ffcc; word-break: break-all; }
     </style>
 </head>
@@ -143,7 +143,7 @@
 
     <h2>
         <img id="app-icon" src="-icon.png" alt="Icon" onerror="this.style.display='none'">
-        P2P ファイル転送ツール
+        ファイル転送ツール
     </h2>
 
     <div class="container">
@@ -327,11 +327,21 @@
             });
         }
 
+        // 速度のフォーマット（MB/s または KB/s）
         function formatSpeed(bytesPerSec) {
             if (bytesPerSec > 1024 * 1024) {
-                return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' MB/s';
+                return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' mb/s';
             } else {
-                return (bytesPerSec / 1024).toFixed(0) + ' KB/s';
+                return (bytesPerSec / 1024).toFixed(0) + ' kb/s';
+            }
+        }
+
+        // 残りサイズのフォーマット（MB または KB）
+        function formatRemainingSize(bytes) {
+            if (bytes > 1024 * 1024) {
+                return (bytes / (1024 * 1024)).toFixed(2) + ' mb';
+            } else {
+                return (bytes / 1024).toFixed(2) + ' kb';
             }
         }
 
@@ -406,7 +416,7 @@
                     receivedSize = 0;
                     receiveStartTime = Date.now();
                     isReceiving = true;
-                    document.getElementById('receive-status').innerText = `受信中: ${fileMeta.name}`;
+                    document.getElementById('receive-status').innerText = `受信中: 0%\n0 mb/s：残り ${formatRemainingSize(fileMeta.size)}\n残り約 計算中...`;
                     document.getElementById('receiveStopBtn').style.display = 'inline-block';
                 } else if (data.type === 'chunk') {
                     if (!isReceiving) return;
@@ -416,17 +426,18 @@
                     receivedSize += arrayBuffer.byteLength;
 
                     const progress = Math.round((receivedSize / fileMeta.size) * 100);
+                    const remainingBytes = fileMeta.size - receivedSize;
                     
                     const elapsedTime = (Date.now() - receiveStartTime) / 1000;
                     if (elapsedTime > 0) {
                         const speed = receivedSize / elapsedTime;
-                        const remainingBytes = fileMeta.size - receivedSize;
                         const remainingSeconds = remainingBytes / speed;
                         
                         document.getElementById('receive-status').innerText = 
-                            `受信中: ${progress}% (${formatSpeed(speed)} / 残り約 ${formatTime(remainingSeconds)})`;
+                            `受信中：${progress}％\n${formatSpeed(speed)}：残り ${formatRemainingSize(remainingBytes)}\n残り約 ${formatTime(remainingSeconds)}`;
                     } else {
-                        document.getElementById('receive-status').innerText = `受信中: ${progress}%`;
+                        document.getElementById('receive-status').innerText = 
+                            `受信中：${progress}％\n0 mb/s：残り ${formatRemainingSize(remainingBytes)}\n残り約 計算中...`;
                     }
 
                     if (receivedSize === fileMeta.size) {
@@ -488,17 +499,18 @@
                 offset += e.target.result.byteLength;
 
                 const progress = Math.round((offset / file.size) * 100);
+                const remainingBytes = file.size - offset;
                 
                 const elapsedTime = (Date.now() - sendStartTime) / 1000;
                 if (elapsedTime > 0) {
                     const speed = offset / elapsedTime;
-                    const remainingBytes = file.size - offset;
                     const remainingSeconds = remainingBytes / speed;
 
                     document.getElementById('send-progress').innerText = 
-                        `送信中: ${progress}% (${formatSpeed(speed)} / 残り約 ${formatTime(remainingSeconds)})`;
+                        `送信中：${progress}％\n${formatSpeed(speed)}：残り ${formatRemainingSize(remainingBytes)}\n残り約 ${formatTime(remainingSeconds)}`;
                 } else {
-                    document.getElementById('send-progress').innerText = `送信中: ${progress}%`;
+                    document.getElementById('send-progress').innerText = 
+                        `送信中：${progress}％\n0 mb/s：残り ${formatRemainingSize(remainingBytes)}\n残り約 計算中...`;
                 }
 
                 if (offset < file.size && isSending) {
