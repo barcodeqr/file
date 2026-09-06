@@ -3,16 +3,72 @@
 <head>
     <meta charset="UTF-8">
     <title>P2Pファイル転送（サーバー不要版）</title>
-    <!-- PeerJSライブラリの読み込み（より安定した最新CDNに変更） -->
+    <!-- PeerJSライブラリの読み込み -->
     <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
     <style>
         body { font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; padding: 20px; }
-        .panel { background: #252525; padding: 15px; border-radius: 10px; max-width: 400px; margin: 10px auto; border: 1px solid #444; }
-        input { padding: 6px; border-radius: 4px; border: 1px solid #555; background: #333; color: #fff; width: 180px; text-align: center; }
-        button { padding: 6px 12px; font-weight: bold; background: #0072ce; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
-        button:disabled { background: #555; cursor: not-allowed; }
-        #status { font-weight: bold; color: #00ffcc; margin: 10px 0; }
-        .card { background: #333; border: 1px solid #444; border-radius: 8px; padding: 10px; margin: 10px auto; max-width: 400px; }
+        .panel { background: #252525; padding: 15px; border-radius: 12px; max-width: 450px; margin: 10px auto; border: 1px solid #444; }
+        input[type="text"] { padding: 8px; border-radius: 6px; border: 1px solid #555; background: #333; color: #fff; width: 180px; text-align: center; }
+        
+        /* ぷっくり立体的なボタンの共通スタイル（影を自然で綺麗な立体感に調整） */
+        .puku-btn {
+            padding: 10px 18px;
+            font-weight: bold;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.25), inset 0 2px 3px rgba(255, 255, 255, 0.4), inset 0 -2px 3px rgba(0, 0, 0, 0.2);
+            transition: all 0.15s ease;
+            margin: 5px;
+        }
+        .puku-btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2), inset 0 1px 2px rgba(255, 255, 255, 0.3);
+        }
+        .puku-btn:disabled {
+            background: #555 !important;
+            color: #aaa;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+
+        /* 部屋を作るボタン（鮮やかなブルー） */
+        #create-btn { background: linear-gradient(to bottom, #1a90ff, #0066cc); }
+        #create-btn:hover:not(:disabled) { background: linear-gradient(to bottom, #339cff, #0073e6); }
+
+        /* 部屋に参加ボタン・参加実行ボタン（エメラルドグリーン） */
+        .join-btn-style { background: linear-gradient(to bottom, #00c875, #009658); }
+        .join-btn-style:hover:not(:disabled) { background: linear-gradient(to bottom, #1cd385, #00ab63); }
+
+        /* 戻るボタン（落ち着いたグレー） */
+        .back-btn { background: linear-gradient(to bottom, #666, #444); font-size: 13px; padding: 8px 14px; }
+        .back-btn:hover { background: linear-gradient(to bottom, #777, #555); }
+
+        /* ファイル送信ボタン（温かみのあるオレンジ） */
+        #sendBtn { background: linear-gradient(to bottom, #ff9433, #e66b00); width: 100%; max-width: 250px; font-size: 15px; }
+        #sendBtn:hover:not(:disabled) { background: linear-gradient(to bottom, #ffa34d, #ff7700); }
+
+        .card { background: #333; border: 1px solid #444; border-radius: 8px; padding: 15px; margin: 10px auto; max-width: 450px; }
+        
+        .file-input-wrapper {
+            margin: 10px 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        input[type="file"] {
+            width: 100%;
+            max-width: 380px;
+            background: #222;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px dashed #666;
+            color: #fff;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -22,22 +78,35 @@
     <!-- 接続パネル -->
     <div class="panel">
         <div id="connection-status">未接続</div>
+        
+        <!-- 初期ロビー -->
         <div id="lobby" style="margin-top: 10px;">
-            <button onclick="createRoom()">部屋を作る (ホスト)</button>
-            <button onclick="showJoin()">部屋に参加 (ゲスト)</button>
+            <button id="create-btn" class="puku-btn" onclick="createRoom()">部屋を作る (ホスト)</button>
+            <button class="puku-btn join-btn-style" onclick="showJoin()">部屋に参加 (ゲスト)</button>
         </div>
+
+        <!-- ゲスト参加パネル -->
         <div id="join-panel" style="margin-top: 10px; display: none;">
-            <input type="text" id="room-id-input" placeholder="相手の部屋IDを入力">
-            <button onclick="joinRoom()">参加</button>
+            <input type="text" id="room-id-input" placeholder="相手の部屋IDを入力"><br>
+            <button class="puku-btn join-btn-style" onclick="joinRoom()">参加</button>
+            <button class="puku-btn back-btn" onclick="resetToLobby()">戻る</button>
         </div>
-        <div id="my-id-display" style="margin-top: 10px; font-size: 12px; color: #aaa; cursor: pointer;" onclick="copyMyId()" title="クリックしてコピー"></div>
+
+        <!-- ホスト待機パネル（戻るボタン付き） -->
+        <div id="host-panel" style="margin-top: 10px; display: none;">
+            <div id="my-id-display" style="font-size: 12px; color: #aaa; cursor: pointer; word-break: break-all;" onclick="copyMyId()" title="クリックしてコピー"></div>
+            <button class="puku-btn back-btn" style="margin-top: 10px;" onclick="resetToLobby()">部屋を作り直す（戻る）</button>
+        </div>
     </div>
 
     <!-- ファイル送信・受信パネル -->
     <div class="card">
         <h3>ファイルを送る</h3>
-        <input type="file" id="fileInput"><br><br>
-        <button id="sendBtn" onclick="sendFile()" disabled>ファイルを送信する</button>
+        <div class="file-input-wrapper">
+            <input type="file" id="fileInput">
+        </div>
+        <br>
+        <button id="sendBtn" class="puku-btn" onclick="sendFile()" disabled>ファイルを送信する</button>
         <p id="send-progress"></p>
     </div>
 
@@ -59,6 +128,7 @@
                 myId = id;
                 document.getElementById('connection-status').innerText = 'ステータス: ホスト待機中';
                 document.getElementById('lobby').style.display = 'none';
+                document.getElementById('host-panel').style.display = 'block';
                 document.getElementById('my-id-display').innerText = `あなたの部屋ID: ${id} (クリックでコピー)`;
             });
 
@@ -78,6 +148,27 @@
             document.getElementById('join-panel').style.display = 'block';
         }
 
+        // 初期状態（ロビー）に戻す関数
+        function resetToLobby() {
+            if (peer) {
+                peer.destroy(); // 既存の通信を閉じる
+                peer = null;
+            }
+            conn = null;
+            myId = '';
+
+            // 画面表示をリセット
+            document.getElementById('connection-status').innerText = '未接続';
+            document.getElementById('lobby').style.display = 'block';
+            document.getElementById('join-panel').style.display = 'none';
+            document.getElementById('host-panel').style.display = 'none';
+            document.getElementById('room-id-input').value = '';
+            document.getElementById('sendBtn').disabled = true;
+            document.getElementById('send-progress').innerText = '';
+            document.getElementById('receive-status').innerText = '待機中...';
+            document.getElementById('downloadArea').innerHTML = '';
+        }
+
         function joinRoom() {
             const targetId = document.getElementById('room-id-input').value.trim();
             if (!targetId) { alert('部屋IDを入力してください'); return; }
@@ -90,7 +181,8 @@
             });
 
             peer.on('error', (err) => {
-                alert('接続エラーが発生しました: ' + err.type);
+                alert('接続エラーが発生しました: 部屋IDが間違っているか、ホストが不在です。');
+                resetToLobby();
             });
         }
 
