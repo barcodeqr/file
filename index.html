@@ -2,15 +2,15 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>P2Pファイル転送</title>
-    <!-- PeerJSライブラリの読み込み -->
-    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+    <title>P2Pファイル転送（双方向・停止機能付き）</title>
+    <!-- 安定動作が確認されているPeerJS v1.4.7を使用 -->
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <style>
         body { font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; padding: 20px; }
         .panel { background: #252525; padding: 15px; border-radius: 12px; max-width: 450px; margin: 10px auto; border: 1px solid #444; }
-        input[type="text"] { padding: 8px; border-radius: 6px; border: 1px solid #555; background: #333; color: #fff; width: 180px; text-align: center; }
+        input[type="text"], input[type="password"] { padding: 8px; border-radius: 6px; border: 1px solid #555; background: #333; color: #fff; width: 200px; text-align: center; margin: 5px 0; }
         
-        /* ぷっくり立体的なボタンの共通スタイル（影を自然で綺麗な立体感に調整） */
+        /* ぷっくり立体的なボタンの共通スタイル */
         .puku-btn {
             padding: 10px 18px;
             font-weight: bold;
@@ -34,21 +34,21 @@
             transform: none;
         }
 
-        /* 部屋を作るボタン（鮮やかなブルー） */
         #create-btn { background: linear-gradient(to bottom, #1a90ff, #0066cc); }
         #create-btn:hover:not(:disabled) { background: linear-gradient(to bottom, #339cff, #0073e6); }
 
-        /* 部屋に参加ボタン・参加実行ボタン（エメラルドグリーン） */
         .join-btn-style { background: linear-gradient(to bottom, #00c875, #009658); }
         .join-btn-style:hover:not(:disabled) { background: linear-gradient(to bottom, #1cd385, #00ab63); }
 
-        /* 戻るボタン（落ち着いたグレー） */
         .back-btn { background: linear-gradient(to bottom, #666, #444); font-size: 13px; padding: 8px 14px; }
         .back-btn:hover { background: linear-gradient(to bottom, #777, #555); }
 
-        /* ファイル送信ボタン（温かみのあるオレンジ） */
         #sendBtn { background: linear-gradient(to bottom, #ff9433, #e66b00); width: 100%; max-width: 250px; font-size: 15px; }
         #sendBtn:hover:not(:disabled) { background: linear-gradient(to bottom, #ffa34d, #ff7700); }
+
+        /* 停止ボタン（赤系のグラデーション） */
+        .stop-btn { background: linear-gradient(to bottom, #ff4d4d, #cc0000); font-size: 13px; padding: 6px 12px; margin-top: 8px; display: none; }
+        .stop-btn:hover { background: linear-gradient(to bottom, #ff6666, #e60000); }
 
         .card { background: #333; border: 1px solid #444; border-radius: 8px; padding: 15px; margin: 10px auto; max-width: 450px; }
         
@@ -69,6 +69,7 @@
             color: #fff;
             cursor: pointer;
         }
+        #qrcode-img { background: #fff; padding: 8px; border-radius: 6px; margin-top: 8px; display: inline-block; }
     </style>
 </head>
 <body>
@@ -79,23 +80,28 @@
     <div class="panel">
         <div id="connection-status">未接続</div>
         
-        <!-- 初期ロビー -->
         <div id="lobby" style="margin-top: 10px;">
+            <div style="margin-bottom: 10px;">
+                <input type="password" id="host-password-input" placeholder="パスワード(空欄でもOK)"><br>
+                <span style="font-size: 11px; color: #aaa;">※パスワードを設定する場合は入力してください</span>
+            </div>
             <button id="create-btn" class="puku-btn" onclick="createRoom()">部屋を作る (ホスト)</button>
-            <button class="puku-btn join-btn-style" onclick="showJoin()">部屋に参加 (ゲスト)</button>
+            <button class="puku-btn join-btn-style" onclick="showManualJoin()">部屋に参加 (ゲスト)</button>
         </div>
 
-        <!-- ゲスト参加パネル -->
         <div id="join-panel" style="margin-top: 10px; display: none;">
-            <input type="text" id="room-id-input" placeholder="相手の部屋IDを入力"><br>
-            <button class="puku-btn join-btn-style" onclick="joinRoom()">参加</button>
+            <p style="font-size: 13px; color: #00ffcc; margin: 5px 0;">部屋に参加します</p>
+            <input type="text" id="room-id-input" placeholder="部屋IDまたはURL"><br>
+            <input type="password" id="guest-password-input" placeholder="パスワードを入力(必要な場合)"><br><br>
+            <button class="puku-btn join-btn-style" onclick="joinRoom()">接続して受信する</button>
             <button class="puku-btn back-btn" onclick="resetToLobby()">戻る</button>
         </div>
 
-        <!-- ホスト待機パネル（戻るボタン付き） -->
         <div id="host-panel" style="margin-top: 10px; display: none;">
-            <div id="my-id-display" style="font-size: 12px; color: #aaa; cursor: pointer; word-break: break-all;" onclick="copyMyId()" title="クリックしてコピー"></div>
-            <button class="puku-btn back-btn" style="margin-top: 10px;" onclick="resetToLobby()">部屋を作り直す（戻る）</button>
+            <p style="font-size: 12px; color: #00ffcc; margin: 5px 0;">ホストとして待機中</p>
+            <button class="puku-btn join-btn-style" onclick="copyShareUrl()">🔗 招待URLをコピー</button><br>
+            <div id="qrcode-container"></div><br>
+            <button class="puku-btn back-btn" onclick="resetToLobby()">部屋を作り直す（戻る）</button>
         </div>
     </div>
 
@@ -108,20 +114,46 @@
         <br>
         <button id="sendBtn" class="puku-btn" onclick="sendFile()" disabled>ファイルを送信する</button>
         <p id="send-progress"></p>
+        <button id="sendStopBtn" class="puku-btn stop-btn" onclick="confirmCancelSend()">🛑 送信を停止する</button>
     </div>
 
     <div class="card">
         <h3>ファイルを受け取る</h3>
         <p id="receive-status">待機中...</p>
         <div id="downloadArea"></div>
+        <button id="receiveStopBtn" class="puku-btn stop-btn" onclick="confirmCancelReceive()">🛑 受信を停止する</button>
     </div>
 
     <script>
         let peer = null;
         let conn = null;
         let myId = '';
+        let roomPassword = '';
+        let isHost = false;
+
+        let isSending = false;
+        let cancelSendFlag = false;
+        let isReceiving = false;
+
+        window.onload = function() {
+            const params = new URLSearchParams(window.location.search);
+            const roomIdParam = params.get('room');
+            const pwdParam = params.get('pwd');
+            
+            if (roomIdParam) {
+                document.getElementById('lobby').style.display = 'none';
+                document.getElementById('join-panel').style.display = 'block';
+                document.getElementById('room-id-input').value = roomIdParam;
+                if (pwdParam) {
+                    document.getElementById('guest-password-input').value = decodeURIComponent(pwdParam);
+                }
+            }
+        };
 
         function createRoom() {
+            isHost = true;
+            // 修正箇所：閉じ括弧のタイポを修正
+            roomPassword = document.getElementById('host-password-input').value.trim();
             peer = new Peer();
 
             peer.on('open', (id) => {
@@ -129,13 +161,22 @@
                 document.getElementById('connection-status').innerText = 'ステータス: ホスト待機中';
                 document.getElementById('lobby').style.display = 'none';
                 document.getElementById('host-panel').style.display = 'block';
-                document.getElementById('my-id-display').innerText = `あなたの部屋ID: ${id} (クリックでコピー)`;
+
+                let shareUrl = window.location.origin + window.location.pathname + '?room=' + id;
+                if (roomPassword) {
+                    shareUrl += '&pwd=' + encodeURIComponent(roomPassword);
+                }
+                
+                const qrApi = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(shareUrl)}`;
+                document.getElementById('qrcode-container').innerHTML = `
+                    <div style="font-size:11px; color:#aaa; margin-bottom:3px;">QRコードをスキャンして参加</div>
+                    <img id="qrcode-img" src="${qrApi}" alt="QRコード">
+                `;
             });
 
             peer.on('connection', (connection) => {
                 conn = connection;
                 setupConnection();
-                document.getElementById('connection-status').innerText = 'ステータス: 相手と接続しました！';
             });
 
             peer.on('error', (err) => {
@@ -143,36 +184,64 @@
             });
         }
 
-        function showJoin() {
+        async function copyShareUrl() {
+            let shareUrl = window.location.origin + window.location.pathname + '?room=' + myId;
+            if (roomPassword) {
+                shareUrl += '&pwd=' + encodeURIComponent(roomPassword);
+            }
+            await navigator.clipboard.writeText(shareUrl);
+            alert('招待URLをコピーしました！');
+        }
+
+        function showManualJoin() {
             document.getElementById('lobby').style.display = 'none';
             document.getElementById('join-panel').style.display = 'block';
         }
 
-        // 初期状態（ロビー）に戻す関数
         function resetToLobby() {
             if (peer) {
-                peer.destroy(); // 既存の通信を閉じる
+                peer.destroy();
                 peer = null;
             }
             conn = null;
             myId = '';
+            roomPassword = '';
+            isHost = false;
+            isSending = false;
+            cancelSendFlag = false;
+            isReceiving = false;
 
-            // 画面表示をリセット
+            window.history.replaceState({}, document.title, window.location.pathname);
+
             document.getElementById('connection-status').innerText = '未接続';
             document.getElementById('lobby').style.display = 'block';
             document.getElementById('join-panel').style.display = 'none';
             document.getElementById('host-panel').style.display = 'none';
             document.getElementById('room-id-input').value = '';
+            document.getElementById('host-password-input').value = '';
+            document.getElementById('guest-password-input').value = '';
             document.getElementById('sendBtn').disabled = true;
             document.getElementById('send-progress').innerText = '';
+            document.getElementById('sendStopBtn').style.display = 'none';
             document.getElementById('receive-status').innerText = '待機中...';
             document.getElementById('downloadArea').innerHTML = '';
+            document.getElementById('receiveStopBtn').style.display = 'none';
         }
 
         function joinRoom() {
-            const targetId = document.getElementById('room-id-input').value.trim();
+            let targetId = document.getElementById('room-id-input').value.trim();
+            const inputPassword = document.getElementById('guest-password-input').value.trim();
+            
             if (!targetId) { alert('部屋IDを入力してください'); return; }
 
+            if (targetId.includes('?room=')) {
+                try {
+                    const urlObj = new URL(targetId);
+                    targetId = urlObj.searchParams.get('room');
+                } catch (e) {}
+            }
+
+            window.tempGuestPassword = inputPassword;
             peer = new Peer();
 
             peer.on('open', () => {
@@ -181,48 +250,116 @@
             });
 
             peer.on('error', (err) => {
-                alert('接続エラーが発生しました: 部屋IDが間違っているか、ホストが不在です。');
+                alert('接続エラー: 部屋が見つからないか、ホストが閉じています。');
                 resetToLobby();
             });
         }
 
-        async function copyMyId() {
-            if (!myId) return;
-            await navigator.clipboard.writeText(myId);
-            alert('部屋IDをコピーしました！相手に伝えてください。');
+        function formatSpeed(bytesPerSec) {
+            if (bytesPerSec > 1024 * 1024) {
+                return (bytesPerSec / (1024 * 1024)).toFixed(1) + ' MB/s';
+            } else {
+                return (bytesPerSec / 1024).toFixed(0) + ' KB/s';
+            }
+        }
+
+        function formatTime(seconds) {
+            if (!isFinite(seconds) || seconds < 0) return '計算中...';
+            if (seconds < 60) return Math.round(seconds) + '秒';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.round(seconds % 60);
+            return `${mins}分${secs}秒`;
         }
 
         function setupConnection() {
             conn.on('open', () => {
-                document.getElementById('connection-status').innerText = 'ステータス: P2P接続完了！ファイル送信が可能です。';
-                document.getElementById('join-panel').style.display = 'none';
-                document.getElementById('sendBtn').disabled = false;
+                if (!isHost) {
+                    conn.send({ type: 'auth_check', password: window.tempGuestPassword || '' });
+                } else {
+                    document.getElementById('connection-status').innerText = 'ステータス: 相手と接続しました！';
+                    document.getElementById('sendBtn').disabled = false;
+                }
             });
 
             conn.on('close', () => {
                 document.getElementById('connection-status').innerText = 'ステータス: 接続が切れました。';
                 document.getElementById('sendBtn').disabled = true;
+                document.getElementById('sendStopBtn').style.display = 'none';
+                document.getElementById('receiveStopBtn').style.display = 'none';
             });
 
             let incomingBuffer = [];
             let receivedSize = 0;
             let fileMeta = null;
+            let receiveStartTime = 0;
 
             conn.on('data', (data) => {
+                if (data.type === 'auth_check') {
+                    if (data.password === roomPassword) {
+                        conn.send({ type: 'auth_result', success: true });
+                        document.getElementById('connection-status').innerText = 'ステータス: パスワード認証成功！双方向で送信可能です。';
+                        document.getElementById('sendBtn').disabled = false;
+                    } else {
+                        conn.send({ type: 'auth_result', success: false });
+                        alert('ゲストのパスワードが間違っています。');
+                        conn.close();
+                        resetToLobby();
+                    }
+                    return;
+                }
+
+                if (data.type === 'auth_result') {
+                    if (data.success) {
+                        document.getElementById('connection-status').innerText = 'ステータス: 認証成功！双方向で送受信可能です。';
+                        document.getElementById('join-panel').style.display = 'none';
+                        document.getElementById('sendBtn').disabled = false;
+                    } else {
+                        alert('パスワードが間違っています！');
+                        resetToLobby();
+                    }
+                    return;
+                }
+
+                if (data.type === 'cancel_transfer') {
+                    alert('相手が転送を停止しました。');
+                    isReceiving = false;
+                    document.getElementById('receive-status').innerText = '転送が中断されました。';
+                    document.getElementById('receiveStopBtn').style.display = 'none';
+                    return;
+                }
+
                 if (data.type === 'metadata') {
                     fileMeta = data;
                     incomingBuffer = [];
                     receivedSize = 0;
+                    receiveStartTime = Date.now();
+                    isReceiving = true;
                     document.getElementById('receive-status').innerText = `受信中: ${fileMeta.name}`;
+                    document.getElementById('receiveStopBtn').style.display = 'inline-block';
                 } else if (data.type === 'chunk') {
+                    if (!isReceiving) return;
+
                     const arrayBuffer = Uint8Array.from(data.buffer).buffer;
                     incomingBuffer.push(arrayBuffer);
                     receivedSize += arrayBuffer.byteLength;
 
                     const progress = Math.round((receivedSize / fileMeta.size) * 100);
-                    document.getElementById('receive-status').innerText = `受信中: ${progress}% (${receivedSize}/${fileMeta.size} bytes)`;
+                    
+                    const elapsedTime = (Date.now() - receiveStartTime) / 1000;
+                    if (elapsedTime > 0) {
+                        const speed = receivedSize / elapsedTime;
+                        const remainingBytes = fileMeta.size - receivedSize;
+                        const remainingSeconds = remainingBytes / speed;
+                        
+                        document.getElementById('receive-status').innerText = 
+                            `受信中: ${progress}% (${formatSpeed(speed)} / 残り約 ${formatTime(remainingSeconds)})`;
+                    } else {
+                        document.getElementById('receive-status').innerText = `受信中: ${progress}%`;
+                    }
 
                     if (receivedSize === fileMeta.size) {
+                        isReceiving = false;
+                        document.getElementById('receiveStopBtn').style.display = 'none';
                         const blob = new Blob(incomingBuffer);
                         const url = URL.createObjectURL(blob);
                         document.getElementById('receive-status').innerText = '受信完了！';
@@ -232,34 +369,77 @@
             });
         }
 
+        function confirmCancelSend() {
+            if (confirm('本当にファイルを停止しますか？')) {
+                cancelSendFlag = true;
+                if (conn && conn.open) {
+                    conn.send({ type: 'cancel_transfer' });
+                }
+                isSending = false;
+                document.getElementById('send-progress').innerText = '送信を中断しました。';
+                document.getElementById('sendStopBtn').style.display = 'none';
+            }
+        }
+
+        function confirmCancelReceive() {
+            if (confirm('本当にファイルを停止しますか？')) {
+                isReceiving = false;
+                if (conn && conn.open) {
+                    conn.send({ type: 'cancel_transfer' });
+                }
+                document.getElementById('receive-status').innerText = '受信を中断しました。';
+                document.getElementById('receiveStopBtn').style.display = 'none';
+            }
+        }
+
         function sendFile() {
             const fileInput = document.getElementById('fileInput');
             if (fileInput.files.length === 0) return;
             const file = fileInput.files[0];
 
+            isSending = true;
+            cancelSendFlag = false;
             document.getElementById('send-progress').innerText = `送信準備中: ${file.name}`;
+            document.getElementById('sendStopBtn').style.display = 'inline-block';
             
             conn.send({ type: 'metadata', name: file.name, size: file.size, mimeType: file.type });
 
-            const chunkSize = 16384;
+            const chunkSize = 16384; 
             const reader = new FileReader();
             let offset = 0;
+            const sendStartTime = Date.now();
 
             reader.onload = (e) => {
+                if (!isSending || cancelSendFlag) return;
+
                 conn.send({ type: 'chunk', buffer: Array.from(new Uint8Array(e.target.result)) });
                 offset += e.target.result.byteLength;
 
                 const progress = Math.round((offset / file.size) * 100);
-                document.getElementById('send-progress').innerText = `送信中: ${progress}%`;
+                
+                const elapsedTime = (Date.now() - sendStartTime) / 1000;
+                if (elapsedTime > 0) {
+                    const speed = offset / elapsedTime;
+                    const remainingBytes = file.size - offset;
+                    const remainingSeconds = remainingBytes / speed;
 
-                if (offset < file.size) {
-                    readNextChunk();
+                    document.getElementById('send-progress').innerText = 
+                        `送信中: ${progress}% (${formatSpeed(speed)} / 残り約 ${formatTime(remainingSeconds)})`;
                 } else {
+                    document.getElementById('send-progress').innerText = `送信中: ${progress}%`;
+                }
+
+                if (offset < file.size && isSending) {
+                    readNextChunk();
+                } else if (offset >= file.size) {
+                    isSending = false;
                     document.getElementById('send-progress').innerText = 'ファイルの送信が完了しました！';
+                    document.getElementById('sendStopBtn').style.display = 'none';
                 }
             };
 
             function readNextChunk() {
+                if (!isSending || cancelSendFlag) return;
                 const slice = file.slice(offset, offset + chunkSize);
                 reader.readAsArrayBuffer(slice);
             }
