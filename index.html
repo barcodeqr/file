@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>P2Pファイル転送（サーバー不要版）</title>
+    <!-- PeerJSライブラリの読み込み -->
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; padding: 20px; }
+        .panel { background: #252525; padding: 15px; border-radius: 10px; max-width: 400px; margin: 10px auto; border: 1px solid #444; }
+        input { padding: 6px; border-radius: 4px; border: 1px solid #555; background: #333; color: #fff; width: 180px; text-align: center; }
+        button { padding: 6px 12px; font-weight: bold; background: #0072ce; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        #status { font-weight: bold; color: #00ffcc; margin: 10px 0; }
+        .card { background: #333; border: 1px solid #444; border-radius: 8px; padding: 10px; margin: 10px auto; max-width: 400px; }
+    </style>
+</head>
+<body>
+
+    <h2>P2P ファイル転送ツール</h2>
+
+    <!-- 接続パネル -->
+    <div class="panel">
+        <div id="connection-status">未接続</div>
+        <div id="lobby" style="margin-top: 10px;">
+            <button onclick="createRoom()">部屋を作る (ホスト)</button>
+            <button onclick="showJoin()">部屋に参加 (ゲスト)</button>
+        </div>
+        <div id="join-panel" style="margin-top: 10px; display: none;">
+            <input type="text" id="room-id-input" placeholder="相手の部屋IDを入力">
+            <button onclick="joinRoom()">参加</button>
+        </div>
+        <div id="my-id-display" style="margin-top: 10px; font-size: 12px; color: #aaa; cursor: pointer;" onclick="copyMyId()" title="クリックしてコピー"></div>
+    </div>
+
+    <!-- ファイル送信・受信パネル -->
+    <div class="card">
+        <h3>ファイルを送る</h3>
+        <input type="file" id="fileInput"><br><br>
+        <button id="sendBtn" onclick="sendFile()" disabled>ファイルを送信する</button>
+        <p id="send-progress"></p>
+    </div>
+
+    <div class="card">
+        <h3>ファイルを受け取る</h3>
+        <p id="receive-status">待機中...</p>
+        <div id="downloadArea"></div>
+    </div>
+
+    <script>
+        let peer = null;
+        let conn = null;
+        let myId = '';
+
+        function createRoom() {
+            // ランダムなIDでホストとしてPeerを作成
+            peer = new Peer();
+
+            peer.on('open', (id) => {
+                myId = id;
+                document.getElementById('connection-status').innerText = 'ステータス: ホスト待機中';
+                document.getElementById('lobby').style.display = 'none';
+                document.getElementById('my-id-display').innerText = `あなたの部屋ID: ${id} (クリックでコピー)`;
+            });
+
+            peer.on('connection', (connection) => {
+                conn = connection;
+                setupConnection();
+                document.getElementById('connection-status').innerText = 'ステータス: 相手と接続しました！';
+            });
+        }
+
+        function showJoin() {
+            document.getElementById('lobby').style.display = 'none';
+            document.getElementById('join-panel').style.display = 'block';
+        }
+
+        function joinRoom() {
+            const targetId = document.getElementById('room-id-input').value.trim();
+            if (!targetId) { alert('部屋IDを入力してください'); return; }
+
+            peer = new Peer();
+
+            peer.on('open', () => {
+                conn = peer.connect(targetId);
+                setupConnection();
+            });
+        }
+
+        async function copyMyId() {
+            if (!myId) return;
+            await navigator.clipboard.writeText(myId);
+            alert('部屋IDをコピーしました！相手に伝えてください。');
+        }
+
+        function setupConnection() {
+            conn.on('open', () => {
+                document.getElementById('connection-status').innerText = 'ステータス: P2P接続完了！ファイル送信が可能です。';
+                document.getElementById('join-panel').style.display = 'none';
+                document.getElementById('sendBtn').disabled = false;
+            });
+
+            conn.on('close', () => {
+                document.getElementById('connection-status').innerText = 'ステータス: 接続が切れました。';
+                document.getElementById('sendBtn').disabled = true;
+            });
+
+            // 相手からデータ（ファイル）を受け取るときの処理
+            let incomingBuffer = [];
+            let receivedSize = 0;
+            let fileMeta = null;
+
+            conn.on('data', (data) => {
+                if (data.type === 'metadata') {
+                    fileMeta = data;
+                    incomingBuffer = [];
+                    receivedSize = 0;
+                    document.getElementById('receive-status').innerText = `受信中: ${fileMeta.name}`;
+                } else if (data.type === 'chunk') {
+                    // バイナリデータを戻してバッファに追加
+                    const arrayBuffer = Uint8Array.from(data.buffer).buffer;
+                    incomingBuffer.push(arrayBuffer);
+                    receivedSize += arrayBuffer.byteLength;
+
+                    const progress = Math.round((receivedSize / fileMeta.size) * 100);
+                    document.getElementById('receive-status').innerText = `受信中: ${progress}% (${receivedSize}/${fileMeta.size} bytes)`;
+
+                    if (receivedSize === fileMeta.size) {
+                        const blob = new Blob(incomingBuffer);
+                        const url = URL.createObjectURL(blob);
+                        document.getElementById('receive-status').innerText = '受信完了！';
+                        document.getElementById('downloadArea').innerHTML = `<a href="${url}" download="${fileMeta.name}">📥 ${fileMeta.name} をダウンロードする</a>`;
+                    }
+                }
+            });
+        }
+
+        // ファイルを分割して送信する処理
+        function sendFile() {
+            const fileInput = document.getElementById('fileInput');
+            if (fileInput.files.length === 0) return;
+            const file = fileInput.files[0];
+
+            document.getElementById('send-progress').innerText = `送信準備中: ${file.name}`;
+            
+            // まずファイル名とサイズを相手に伝える
+            conn.send({ type: 'metadata', name: file.name, size: file.size, mimeType: file.type });
+
+            const chunkSize = 16384; // 16KBごとに分割
+            const reader = new FileReader();
+            let offset = 0;
+
+            reader.onload = (e) => {
+                // PeerJS経由でデータを送信
+                conn.send({ type: 'chunk', buffer: Array.from(new Uint8Array(e.target.result)) });
+                offset += e.target.result.byteLength;
+
+                const progress = Math.round((offset / file.size) * 100);
+                document.getElementById('send-progress').innerText = `送信中: ${progress}%`;
+
+                if (offset < file.size) {
+                    readNextChunk();
+                } else {
+                    document.getElementById('send-progress').innerText = 'ファイルの送信が完了しました！';
+                }
+            };
+
+            function readNextChunk() {
+                const slice = file.slice(offset, offset + chunkSize);
+                reader.readAsArrayBuffer(slice);
+            }
+
+            readNextChunk();
+        }
+    </script>
+</body>
+</html>
