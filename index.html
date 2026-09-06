@@ -2,17 +2,77 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>ファイル転送（P2P）</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ファイル転送ツール</title>
     <!-- 安定動作が確認されているPeerJS v1.4.7を使用 -->
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; padding: 20px; }
-        .panel { background: #252525; padding: 15px; border-radius: 12px; max-width: 450px; margin: 10px auto; border: 1px solid #444; }
-        input[type="text"], input[type="password"] { padding: 8px; border-radius: 6px; border: 1px solid #555; background: #333; color: #fff; width: 200px; text-align: center; margin: 5px 0; }
+        /* レスポンシブ対応：画面いっぱいに、かつはみ出さないレイアウト設計 */
+        body { 
+            font-family: sans-serif; 
+            background: #1a1a1a; 
+            color: #fff; 
+            text-align: center; 
+            margin: 0;
+            padding: 10px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h2 {
+            font-size: clamp(1.4rem, 4vw, 2rem);
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        #app-icon {
+            width: clamp(32px, 8vw, 48px);
+            height: clamp(32px, 8vw, 48px);
+            object-fit: contain;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px; /* PCなど大きすぎる画面では広がりすぎないように制限しつつ、スマホでは画面いっぱいに */
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            padding-bottom: 20px;
+        }
+
+        .panel, .card { 
+            background: #252525; 
+            padding: clamp(12px, 3vw, 20px); 
+            border-radius: 12px; 
+            border: 1px solid #444; 
+            box-sizing: border-box;
+            width: 100%;
+        }
+
+        .card { background: #333; }
+
+        input[type="text"], input[type="password"] { 
+            padding: 10px; 
+            border-radius: 6px; 
+            border: 1px solid #555; 
+            background: #333; 
+            color: #fff; 
+            width: 90%; 
+            max-width: 320px;
+            text-align: center; 
+            margin: 6px 0; 
+            font-size: 16px; /* スマホでフォームタップ時にズームしないよう16px以上を確保 */
+        }
         
-        /* ぷっくり立体的なボタンの共通スタイル */
+        /* ぷっくり立体的なボタンの共通スタイル（タッチ操作しやすいよう大きめ） */
         .puku-btn {
-            padding: 10px 18px;
+            padding: 12px 20px;
+            font-size: clamp(0.9rem, 3vw, 1.1rem);
             font-weight: bold;
             color: #fff;
             border: none;
@@ -20,7 +80,8 @@
             cursor: pointer;
             box-shadow: 0 6px 12px rgba(0, 0, 0, 0.25), inset 0 2px 3px rgba(255, 255, 255, 0.4), inset 0 -2px 3px rgba(0, 0, 0, 0.2);
             transition: all 0.15s ease;
-            margin: 5px;
+            margin: 6px;
+            touch-action: manipulation;
         }
         .puku-btn:active {
             transform: translateY(2px);
@@ -40,88 +101,98 @@
         .join-btn-style { background: linear-gradient(to bottom, #00c875, #009658); }
         .join-btn-style:hover:not(:disabled) { background: linear-gradient(to bottom, #1cd385, #00ab63); }
 
-        .back-btn { background: linear-gradient(to bottom, #666, #444); font-size: 13px; padding: 8px 14px; }
+        .back-btn { background: linear-gradient(to bottom, #666, #444); font-size: 14px; padding: 10px 16px; }
         .back-btn:hover { background: linear-gradient(to bottom, #777, #555); }
 
-        #sendBtn { background: linear-gradient(to bottom, #ff9433, #e66b00); width: 100%; max-width: 250px; font-size: 15px; }
+        #sendBtn { background: linear-gradient(to bottom, #ff9433, #e66b00); width: 100%; max-width: 280px; }
         #sendBtn:hover:not(:disabled) { background: linear-gradient(to bottom, #ffa34d, #ff7700); }
 
         /* 停止ボタン（赤系のグラデーション） */
-        .stop-btn { background: linear-gradient(to bottom, #ff4d4d, #cc0000); font-size: 13px; padding: 6px 12px; margin-top: 8px; display: none; }
+        .stop-btn { background: linear-gradient(to bottom, #ff4d4d, #cc0000); font-size: 14px; padding: 8px 16px; margin-top: 10px; display: none; }
         .stop-btn:hover { background: linear-gradient(to bottom, #ff6666, #e60000); }
 
-        .card { background: #333; border: 1px solid #444; border-radius: 8px; padding: 15px; margin: 10px auto; max-width: 450px; }
-        
         .file-input-wrapper {
             margin: 10px 0;
             display: flex;
             flex-direction: column;
             align-items: center;
             gap: 8px;
+            width: 100%;
         }
         input[type="file"] {
             width: 100%;
-            max-width: 380px;
+            max-width: 400px;
             background: #222;
-            padding: 8px;
+            padding: 10px;
             border-radius: 6px;
             border: 1px dashed #666;
             color: #fff;
             cursor: pointer;
+            box-sizing: border-box;
         }
-        #qrcode-img { background: #fff; padding: 8px; border-radius: 6px; margin-top: 8px; display: inline-block; }
+        #qrcode-img { background: #fff; padding: 8px; border-radius: 6px; margin-top: 8px; max-width: 150px; height: auto; display: inline-block; }
+        
+        #connection-status { font-weight: bold; font-size: clamp(0.9rem, 2.5vw, 1.1rem); color: #00ffcc; margin-bottom: 8px; }
+        p { font-size: clamp(0.9rem, 2.5vw, 1rem); word-break: break-all; }
+        a { color: #00ffcc; word-break: break-all; }
     </style>
 </head>
 <body>
 
-    <h2>P2P ファイル転送ツール</h2>
+    <h2>
+        <img id="app-icon" src="-icon.png" alt="Icon" onerror="this.style.display='none'">
+        P2P ファイル転送ツール
+    </h2>
 
-    <!-- 接続パネル -->
-    <div class="panel">
-        <div id="connection-status">未接続</div>
-        
-        <div id="lobby" style="margin-top: 10px;">
-            <div style="margin-bottom: 10px;">
-                <input type="password" id="host-password-input" placeholder="パスワード(空欄でもOK)"><br>
-                <span style="font-size: 11px; color: #aaa;">※パスワードを設定する場合は入力してください</span>
+    <div class="container">
+        <!-- 接続パネル -->
+        <div class="panel">
+            <div id="connection-status">未接続</div>
+            
+            <div id="lobby" style="margin-top: 10px;">
+                <div style="margin-bottom: 10px;">
+                    <input type="password" id="host-password-input" placeholder="パスワード(空欄でもOK)"><br>
+                    <span style="font-size: 11px; color: #aaa;">※パスワードを設定する場合は入力してください</span>
+                </div>
+                <button id="create-btn" class="puku-btn" onclick="createRoom()">部屋を作る (ホスト)</button>
+                <button class="puku-btn join-btn-style" onclick="showManualJoin()">部屋に参加 (ゲスト)</button>
             </div>
-            <button id="create-btn" class="puku-btn" onclick="createRoom()">部屋を作る (ホスト)</button>
-            <button class="puku-btn join-btn-style" onclick="showManualJoin()">部屋に参加 (ゲスト)</button>
+
+            <div id="join-panel" style="margin-top: 10px; display: none;">
+                <p style="font-size: 13px; color: #00ffcc; margin: 5px 0;">部屋に参加します</p>
+                <input type="text" id="room-id-input" placeholder="部屋IDまたはURL"><br>
+                <input type="password" id="guest-password-input" placeholder="パスワードを入力(必要な場合)"><br><br>
+                <button class="puku-btn join-btn-style" onclick="joinRoom()">接続して受信する</button>
+                <button class="puku-btn back-btn" onclick="resetToLobby()">戻る</button>
+            </div>
+
+            <div id="host-panel" style="margin-top: 10px; display: none;">
+                <p style="font-size: 12px; color: #00ffcc; margin: 5px 0;">ホストとして待機中</p>
+                <button class="puku-btn join-btn-style" onclick="copyShareUrl()">🔗 招待URLをコピー</button><br>
+                <div id="qrcode-container"></div><br>
+                <button class="puku-btn back-btn" onclick="resetToLobby()">部屋を作り直す（戻る）</button>
+            </div>
         </div>
 
-        <div id="join-panel" style="margin-top: 10px; display: none;">
-            <p style="font-size: 13px; color: #00ffcc; margin: 5px 0;">部屋に参加します</p>
-            <input type="text" id="room-id-input" placeholder="部屋IDまたはURL"><br>
-            <input type="password" id="guest-password-input" placeholder="パスワードを入力(必要な場合)"><br><br>
-            <button class="puku-btn join-btn-style" onclick="joinRoom()">接続して受信する</button>
-            <button class="puku-btn back-btn" onclick="resetToLobby()">戻る</button>
+        <!-- ファイル送信パネル -->
+        <div class="card">
+            <h3>ファイルを送る</h3>
+            <div class="file-input-wrapper">
+                <input type="file" id="fileInput">
+            </div>
+            <br>
+            <button id="sendBtn" class="puku-btn" onclick="sendFile()" disabled>ファイルを送信する</button>
+            <p id="send-progress"></p>
+            <button id="sendStopBtn" class="puku-btn stop-btn" onclick="confirmCancelSend()">🛑 送信を停止する</button>
         </div>
 
-        <div id="host-panel" style="margin-top: 10px; display: none;">
-            <p style="font-size: 12px; color: #00ffcc; margin: 5px 0;">ホストとして待機中</p>
-            <button class="puku-btn join-btn-style" onclick="copyShareUrl()">🔗 招待URLをコピー</button><br>
-            <div id="qrcode-container"></div><br>
-            <button class="puku-btn back-btn" onclick="resetToLobby()">部屋を作り直す（戻る）</button>
+        <!-- ファイル受信パネル -->
+        <div class="card">
+            <h3>ファイルを受け取る</h3>
+            <p id="receive-status">待機中...</p>
+            <div id="downloadArea"></div>
+            <button id="receiveStopBtn" class="puku-btn stop-btn" onclick="confirmCancelReceive()">🛑 受信を停止する</button>
         </div>
-    </div>
-
-    <!-- ファイル送信・受信パネル -->
-    <div class="card">
-        <h3>ファイルを送る</h3>
-        <div class="file-input-wrapper">
-            <input type="file" id="fileInput">
-        </div>
-        <br>
-        <button id="sendBtn" class="puku-btn" onclick="sendFile()" disabled>ファイルを送信する</button>
-        <p id="send-progress"></p>
-        <button id="sendStopBtn" class="puku-btn stop-btn" onclick="confirmCancelSend()">🛑 送信を停止する</button>
-    </div>
-
-    <div class="card">
-        <h3>ファイルを受け取る</h3>
-        <p id="receive-status">待機中...</p>
-        <div id="downloadArea"></div>
-        <button id="receiveStopBtn" class="puku-btn stop-btn" onclick="confirmCancelReceive()">🛑 受信を停止する</button>
     </div>
 
     <script>
@@ -152,7 +223,6 @@
 
         function createRoom() {
             isHost = true;
-            // 修正箇所：閉じ括弧のタイポを修正
             roomPassword = document.getElementById('host-password-input').value.trim();
             peer = new Peer();
 
@@ -167,7 +237,7 @@
                     shareUrl += '&pwd=' + encodeURIComponent(roomPassword);
                 }
                 
-                const qrApi = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(shareUrl)}`;
+                const qrApi = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(shareUrl)}`;
                 document.getElementById('qrcode-container').innerHTML = `
                     <div style="font-size:11px; color:#aaa; margin-bottom:3px;">QRコードをスキャンして参加</div>
                     <img id="qrcode-img" src="${qrApi}" alt="QRコード">
