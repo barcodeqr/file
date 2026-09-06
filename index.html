@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>P2Pファイル転送（サーバー不要版）</title>
-    <!-- PeerJSライブラリの読み込み -->
-    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <!-- PeerJSライブラリの読み込み（より安定した最新CDNに変更） -->
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
     <style>
         body { font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; padding: 20px; }
         .panel { background: #252525; padding: 15px; border-radius: 10px; max-width: 400px; margin: 10px auto; border: 1px solid #444; }
@@ -53,7 +53,6 @@
         let myId = '';
 
         function createRoom() {
-            // ランダムなIDでホストとしてPeerを作成
             peer = new Peer();
 
             peer.on('open', (id) => {
@@ -67,6 +66,10 @@
                 conn = connection;
                 setupConnection();
                 document.getElementById('connection-status').innerText = 'ステータス: 相手と接続しました！';
+            });
+
+            peer.on('error', (err) => {
+                alert('エラーが発生しました: ' + err.type);
             });
         }
 
@@ -84,6 +87,10 @@
             peer.on('open', () => {
                 conn = peer.connect(targetId);
                 setupConnection();
+            });
+
+            peer.on('error', (err) => {
+                alert('接続エラーが発生しました: ' + err.type);
             });
         }
 
@@ -105,7 +112,6 @@
                 document.getElementById('sendBtn').disabled = true;
             });
 
-            // 相手からデータ（ファイル）を受け取るときの処理
             let incomingBuffer = [];
             let receivedSize = 0;
             let fileMeta = null;
@@ -117,7 +123,6 @@
                     receivedSize = 0;
                     document.getElementById('receive-status').innerText = `受信中: ${fileMeta.name}`;
                 } else if (data.type === 'chunk') {
-                    // バイナリデータを戻してバッファに追加
                     const arrayBuffer = Uint8Array.from(data.buffer).buffer;
                     incomingBuffer.push(arrayBuffer);
                     receivedSize += arrayBuffer.byteLength;
@@ -135,7 +140,6 @@
             });
         }
 
-        // ファイルを分割して送信する処理
         function sendFile() {
             const fileInput = document.getElementById('fileInput');
             if (fileInput.files.length === 0) return;
@@ -143,15 +147,13 @@
 
             document.getElementById('send-progress').innerText = `送信準備中: ${file.name}`;
             
-            // まずファイル名とサイズを相手に伝える
             conn.send({ type: 'metadata', name: file.name, size: file.size, mimeType: file.type });
 
-            const chunkSize = 16384; // 16KBごとに分割
+            const chunkSize = 16384;
             const reader = new FileReader();
             let offset = 0;
 
             reader.onload = (e) => {
-                // PeerJS経由でデータを送信
                 conn.send({ type: 'chunk', buffer: Array.from(new Uint8Array(e.target.result)) });
                 offset += e.target.result.byteLength;
 
